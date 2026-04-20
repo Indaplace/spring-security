@@ -408,6 +408,42 @@ public class OidcLogoutSpecTests {
 		this.test.mutateWith(session(session)).get().uri("/token/logout").exchange().expectStatus().isOk();
 	}
 
+	@Test
+	void logoutWhenProviderIssuerMissingThen5xxServerError() {
+		this.spring.register(WebServerConfig.class, OidcProviderConfig.class, ProviderIssuerMissingConfig.class)
+			.autowire();
+		String registrationId = this.clientRegistration.getRegistrationId();
+		String session = login();
+		String logoutToken = this.test.mutateWith(session(session))
+			.get()
+			.uri("/token/logout")
+			.exchange()
+			.expectStatus()
+			.isOk()
+			.returnResult(String.class)
+			.getResponseBody()
+			.blockFirst();
+		this.test.post()
+			.uri(this.web.url("/logout/connect/back-channel/" + registrationId).toString())
+			.body(BodyInserters.fromFormData("logout_token", logoutToken))
+			.exchange()
+			.expectStatus()
+			.is5xxServerError();
+		this.test.mutateWith(session(session)).get().uri("/token/logout").exchange().expectStatus().isOk();
+	}
+
+	@Test
+	void logoutWhenSetJwtDecoderFactoryWithWrongJwsAlgoThenUsesAndUnauthorized() throws Exception {
+		this.spring.register(WebServerConfig.class, OidcProviderConfig.class, JwtDecoderFactoryWrongAlgoConfig.class).autowire();
+		String registrationId = this.clientRegistration.getRegistrationId();
+		MockHttpSession session = login();
+		String logoutToken =  this.test.mutateWith(session(session))
+			.get()
+			.uri("/token/logout")
+			.exchange()
+			.expectStatus().isUnauthorized()
+	}
+
 	private String login() {
 		this.test.get().uri("/token/logout").exchange().expectStatus().isUnauthorized();
 		String registrationId = this.clientRegistration.getRegistrationId();
@@ -544,6 +580,47 @@ public class OidcLogoutSpecTests {
 				.oidcLogout((oidc) -> oidc
 					.backChannel(Customizer.withDefaults())
 				);
+			// @formatter:on
+
+			return http.build();
+		}
+
+	}
+
+	@Configuration
+	@EnableWebFluxSecurity
+	@Import(RegistrationConfig.class)
+	static class JwtDecoderFactoryWrongAlgoConfig {
+
+		@Bean
+		@Order(1)
+		SecurityWebFilterChain filters(ServerHttpSecurity http) throws Exception {
+			JwtTypeValidator type = new JwtTypeValidator("JWT", "logout+jwt");
+			type.setAllowEmpty(true);
+			Function<ClientRegistration, OAuth2TokenValidator<Jwt>> jwtValidator = (clientRegistration) -> JwtValidators
+			.createDefaultWithValidators(type, new OidcBackChannelLogoutTokenValidator(clientRegistration));
+			// @formatter:off
+			http
+					.authorizeExchange((authorize) -> authorize.anyExchange().authenticated())
+					.oauth2Login(Customizer.withDefaults())
+					.oidcLogout((oidc) -> oidc
+						.backChannel((backchannel) -> backchannel.logoutTokenDecoderFactory((clientRegistration) -> {
+							String jwkSetUri = clientRegistration.getProviderDetails().getJwkSetUri();
+							if (!StringUtils.hasText(jwkSetUri)) {
+								OAuth2Error oauth2Error = new OAuth2Error("missing_signature_verifier",
+										"Failed to find a Signature Verifier for Client Registration: '"
+												+ clientRegistration.getRegistrationId()
+												+ "'. Check to ensure you have configured the JwkSet URI.",
+										null);
+								throw new OAuth2AuthenticationException(oauth2Error, oauth2Error.toString());
+							}
+							NimbusReactiveJwtDecoder decoder = NimbusReactiveJwtDecoder.withJwkSetUri(jwkSetUri).build();
+							decoder.setJwtValidator(jwtValidator.apply(clientRegistration));
+							decoder.setClaimSetConverter(
+									new ClaimTypeConverter(OidcIdTokenDecoderFactory.createDefaultClaimTypeConverters()));
+							return decoder;
+						})
+					);
 			// @formatter:on
 
 			return http.build();
