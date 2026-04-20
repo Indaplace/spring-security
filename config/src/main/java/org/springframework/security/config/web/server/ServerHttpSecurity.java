@@ -4753,6 +4753,23 @@ public class ServerHttpSecurity {
 				return this;
 			}
 
+			/**
+			 * Configure {@link JwtDecoderFactory} used by the {@link OidcBackChannelLogoutReactiveAuthenticationManager } to decode the logout JWT.
+			 *
+			 * <p>
+			 * This overrides {@link JwtDecoderFactory} given to {@link #logoutTokenDecoderFactory(JwtDecoderFactory)} 
+			 * on {@link OidcBackChannelLogoutReactiveAuthenticationManager#setLogoutTokenDecoderFactory(JwtDecoderFactory)}
+			 * </p>
+			 * @param logoutTokenDecoderFactory the {@link JwtDecoderFactory} to use to decode the logout JWT
+			 * @return {@link BackChannelLogoutConfigurer} for further customizations
+			 */
+			public BackChannelLogoutConfigurer logoutTokenDecoderFactory(ReactiveJwtDecoderFactory<ClientRegistration> logoutTokenDecoderFactory) {
+	            if(this.authenticationManager instanceof OidcBackChannelLogoutReactiveAuthenticationManager providerManager) {
+	                providerManager.setLogoutTokenDecoderFactory(logoutTokenDecoderFactory);
+	            }
+	            return this;
+	        }
+
 			void configure(ServerHttpSecurity http) {
 				ServerLogoutHandler oidcLogout = this.logoutHandler.get();
 				ServerLogoutHandler sessionLogout = new SecurityContextServerLogoutHandler();
