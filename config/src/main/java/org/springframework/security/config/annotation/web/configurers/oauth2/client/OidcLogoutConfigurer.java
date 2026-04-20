@@ -267,6 +267,27 @@ public final class OidcLogoutConfigurer<B extends HttpSecurityBuilder<B>>
 			return this;
 		}
 
+		/**
+		 * Configure {@link JwtDecoderFactory} used by the {@link OidcBackChannelLogoutAuthenticationProvider} to decode the logout JWT.
+		 *
+		 * <p>
+		 * This overrides {@link JwtDecoderFactory} given to {@link #logoutTokenDecoderFactory(JwtDecoderFactory)} 
+		 * on {@link OidcBackChannelLogoutAuthenticationProvider#setLogoutTokenDecoderFactory(JwtDecoderFactory)}
+		 * </p>
+		 * @param logoutTokenDecoderFactory the {@link JwtDecoderFactory} to use to decode the logout JWT
+		 * @return {@link BackChannelLogoutConfigurer} for further customizations
+		 */
+		public BackChannelLogoutConfigurer logoutTokenDecoderFactory(JwtDecoderFactory<ClientRegistration> logoutTokenDecoderFactory) {
+            if(this.authenticationManager instanceof ProviderManager providerManager) {
+               providerManager.getProviders().stream()
+                       .filter(OidcBackChannelLogoutAuthenticationProvider.class::isInstance)
+                       .findFirst()
+                       .map(OidcBackChannelLogoutAuthenticationProvider.class::cast)
+                       .ifPresent(provider -> provider.setLogoutTokenDecoderFactory(logoutTokenDecoderFactory));
+           }
+            return this;
+        }
+
 		void configure(B http) {
 			LogoutHandler oidcLogout = this.logoutHandler.apply(http);
 			LogoutHandler sessionLogout = new SecurityContextLogoutHandler();
