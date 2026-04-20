@@ -338,6 +338,15 @@ public class OidcLogoutConfigurerTests {
 		return session;
 	}
 
+	@Test
+	void logoutWhenSetJwtDecoderFactoryWithWrongJwsAlgoThenUsesAndUnauthorized() throws Exception {
+		this.spring.register(WebServerConfig.class, OidcProviderConfig.class, JwtDecoderFactoryWrongAlgoConfig.class).autowire();
+		String registrationId = this.clientRegistration.getRegistrationId();
+		MockHttpSession session = login();
+		String logoutToken = this.mvc.perform(get("/token/logout").session(session))
+			.andExpect(status().isUnauthorized())
+	}
+
 	@Configuration
 	static class RegistrationConfig {
 
@@ -481,6 +490,48 @@ public class OidcLogoutConfigurerTests {
 		@PreDestroy
 		void shutdown() throws IOException {
 			this.server.shutdown();
+		}
+
+	}
+
+	@Configuration
+	@EnableWebSecurity
+	@Import(RegistrationConfig.class)
+	static class JwtDecoderFactoryWrongAlgoConfig {
+
+		@Bean
+		@Order(1)
+		SecurityFilterChain filters(HttpSecurity http) throws Exception {
+			JwtTypeValidator type = new JwtTypeValidator("JWT", "logout+jwt");
+			type.setAllowEmpty(true);
+			Function<ClientRegistration, OAuth2TokenValidator<Jwt>> jwtValidator = (clientRegistration) -> JwtValidators
+			.createDefaultWithValidators(type, new OidcBackChannelLogoutTokenValidator(clientRegistration));
+			// @formatter:off
+			http
+					.authorizeHttpRequests((authorize) -> authorize.anyRequest().authenticated())
+					.oauth2Login(Customizer.withDefaults())
+					.oidcLogout((oidc) -> oidc
+						.backChannel((backchannel) -> backchannel.logoutTokenDecoderFactory((clientRegistration) -> {
+							String jwkSetUri = clientRegistration.getProviderDetails().getJwkSetUri();
+							if (!StringUtils.hasText(jwkSetUri)) {
+								OAuth2Error oauth2Error = new OAuth2Error("missing_signature_verifier",
+										"Failed to find a Signature Verifier for Client Registration: '"
+												+ clientRegistration.getRegistrationId()
+												+ "'. Check to ensure you have configured the JwkSet URI.",
+										null);
+								throw new OAuth2AuthenticationException(oauth2Error, oauth2Error.toString());
+							}
+							NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri)
+								.jwsAlgorithm(SignatureAlgorithm.RS512)
+								.build();
+							decoder.setJwtValidator(jwtValidator.apply(clientRegistration));
+							decoder.setClaimSetConverter(OidcIdTokenDecoderFactory.createDefaultClaimTypeConverter());
+							return decoder;
+						})
+					);
+			// @formatter:on
+
+			return http.build();
 		}
 
 	}
