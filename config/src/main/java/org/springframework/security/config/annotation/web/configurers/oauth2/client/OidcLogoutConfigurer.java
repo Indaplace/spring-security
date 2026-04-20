@@ -125,8 +125,10 @@ public final class OidcLogoutConfigurer<B extends HttpSecurityBuilder<B>>
 
 		private AuthenticationConverter authenticationConverter;
 
+		private final OidcBackChannelLogoutAuthenticationProvider authenticationProvider = 
+				new OidcBackChannelLogoutAuthenticationProvider();
 		private final AuthenticationManager authenticationManager = new ProviderManager(
-				new OidcBackChannelLogoutAuthenticationProvider());
+				this.authenticationProvider);
 
 		private Function<B, LogoutHandler> logoutHandler = this::logoutHandler;
 
@@ -278,13 +280,7 @@ public final class OidcLogoutConfigurer<B extends HttpSecurityBuilder<B>>
 		 * @return {@link BackChannelLogoutConfigurer} for further customizations
 		 */
 		public BackChannelLogoutConfigurer logoutTokenDecoderFactory(JwtDecoderFactory<ClientRegistration> logoutTokenDecoderFactory) {
-            if(this.authenticationManager instanceof ProviderManager providerManager) {
-               providerManager.getProviders().stream()
-                       .filter(OidcBackChannelLogoutAuthenticationProvider.class::isInstance)
-                       .findFirst()
-                       .map(OidcBackChannelLogoutAuthenticationProvider.class::cast)
-                       .ifPresent(provider -> provider.setLogoutTokenDecoderFactory(logoutTokenDecoderFactory));
-           }
+            this.authenticationProvider.setLogoutTokenDecoderFactory(logoutTokenDecoderFactory);
             return this;
         }
 
